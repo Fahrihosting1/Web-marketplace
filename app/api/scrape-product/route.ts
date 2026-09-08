@@ -94,6 +94,44 @@ function findPriceFromMeta(html: string): number | undefined {
   return Number.isNaN(num) ? undefined : num;
 }
 
+// Beberapa marketplace (terutama Tokopedia short-link vt.tokopedia.com)
+// menyajikan halaman "security check" / captcha ke request tanpa browser asli.
+// Kalau ini tidak dideteksi, judul halaman challenge (mis. "Security Check")
+// akan salah dianggap sebagai nama produk.
+const BLOCK_PAGE_SIGNALS = [
+  "security check",
+  "access denied",
+  "attention required",
+  "just a moment",
+  "are you a human",
+  "are you human",
+  "verify you are human",
+  "please verify",
+  "robot check",
+  "bot detection",
+  "captcha",
+  "unusual traffic",
+  "forbidden",
+];
+
+function looksLikeBlockPage(title: string | undefined, html: string): boolean {
+  const t = (title ?? "").toLowerCase();
+  if (BLOCK_PAGE_SIGNALS.some((s) => t.includes(s))) return true;
+
+  // Halaman challenge biasanya sangat pendek dan tidak punya JSON-LD produk
+  // ataupun og:price — cek juga sedikit body untuk sinyal umum Cloudflare/captcha.
+  const bodySample = html.slice(0, 5000).toLowerCase();
+  if (
+    bodySample.includes("cf-challenge") ||
+    bodySample.includes("cf_chl_") ||
+    bodySample.includes("g-recaptcha") ||
+    bodySample.includes("hcaptcha")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // ─── Route ──────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const targetUrl = req.nextUrl.searchParams.get("url");
@@ -113,16 +151,37 @@ export async function GET(req: NextRequest) {
   try {
     const res = await fetch(parsed.toString(), {
       headers: {
-        // Beberapa marketplace menolak request tanpa User-Agent browser
+        // Header yang lebih mirip browser asli supaya lebih kecil kemungkinan
+        // kena halaman "security check" / anti-bot marketplace.
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        Referer: "https://www.google.com/",
       },
       redirect: "follow",
       signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
+      // Tokopedia/Shopee dkk sering balas 403/429 saat mendeteksi bot.
+      if (res.status === 403 || res.status === 429) {
+        return NextResponse.json(
+          {
+            error:
+              "Situs ini memblokir permintaan otomatis (bot protection). Isi data produk secara manual ya.",
+          },
+          { status: 502 }
+        );
+      }
       return NextResponse.json(
         { error: `Gagal mengambil halaman (status ${res.status})` },
         { status: 502 }
@@ -134,6 +193,20 @@ export async function GET(req: NextRequest) {
     const title =
       getMeta(html, "og:title", "twitter:title") ??
       html.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
+
+    // Jangan percaya judul halaman kalau ternyata itu halaman "security check" /
+    // captcha, bukan halaman produk sungguhan — sebelumnya nilai seperti
+    // "Security Check" bisa lolos jadi Nama Produk.
+    if (looksLikeBlockPage(title, html)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Situs ini menampilkan halaman verifikasi/keamanan (bukan halaman produk), sehingga data tidak bisa dideteksi otomatis. Buka link-nya di browser, salin nama/harga/foto secara manual.",
+        },
+        { status: 502 }
+      );
+    }
 
     const image = getMeta(html, "og:image", "og:image:secure_url", "twitter:image");
 
