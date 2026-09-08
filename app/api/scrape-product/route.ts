@@ -82,6 +82,72 @@ function extractPriceFromNode(node: unknown): number | undefined {
   return undefined;
 }
 
+// Ambil URL gambar tunggal dari nilai field "image" JSON-LD, yang bisa berupa
+// string, array string, objek ImageObject ({url: "..."}), atau array objek.
+function coerceImageValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = coerceImageValue(item);
+      if (url) return url;
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    const url = (value as Record<string, unknown>).url;
+    if (typeof url === "string" && url.trim()) return url.trim();
+  }
+  return undefined;
+}
+
+function extractImageFromNode(node: unknown): string | undefined {
+  if (!node || typeof node !== "object") return undefined;
+  const obj = node as Record<string, unknown>;
+
+  const type = obj["@type"];
+  const isProductLike =
+    type === "Product" ||
+    (Array.isArray(type) && type.includes("Product"));
+
+  if (isProductLike && obj.image !== undefined) {
+    const url = coerceImageValue(obj.image);
+    if (url) return url;
+  }
+
+  if (Array.isArray(obj["@graph"])) {
+    for (const child of obj["@graph"] as unknown[]) {
+      const url = extractImageFromNode(child);
+      if (url) return url;
+    }
+  }
+
+  return undefined;
+}
+
+// Foto produk asli dari JSON-LD (schema.org Product.image) lebih bisa
+// dipercaya daripada og:image/twitter:image, yang di beberapa marketplace
+// (mis. halaman Tokopedia hasil integrasi TikTok Shop) ternyata cuma banner
+// iklan generik, bukan foto produk sungguhan.
+function findImageFromJsonLd(html: string): string | undefined {
+  const blocks = [...html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  )];
+
+  for (const block of blocks) {
+    try {
+      const parsed = JSON.parse(block[1].trim());
+      const candidates = Array.isArray(parsed) ? parsed : [parsed];
+      for (const node of candidates) {
+        const url = extractImageFromNode(node);
+        if (url) return url;
+      }
+    } catch {
+      // ignore malformed JSON-LD blocks
+    }
+  }
+  return undefined;
+}
+
 function findPriceFromMeta(html: string): number | undefined {
   const raw = getMeta(
     html,
@@ -93,6 +159,7 @@ function findPriceFromMeta(html: string): number | undefined {
   const num = Number(raw.replace(/[^0-9.]/g, ""));
   return Number.isNaN(num) ? undefined : num;
 }
+
 
 // Beberapa marketplace (terutama Tokopedia short-link vt.tokopedia.com)
 // menyajikan halaman "security check" / captcha ke request tanpa browser asli.
@@ -208,20 +275,33 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const image = getMeta(html, "og:image", "og:image:secure_url", "twitter:image");
+    const imageFromJsonLd = findImageFromJsonLd(html);
+    const image =
+      imageFromJsonLd ??
+      getMeta(html, "og:image", "og:image:secure_url", "twitter:image");
 
     const price = findPriceFromJsonLd(html) ?? findPriceFromMeta(html);
 
     const foundAny = Boolean(title || image || price);
+
+    const warnings: string[] = [];
+    if (!price) {
+      warnings.push(
+        "Harga tidak terdeteksi otomatis — situs ini mungkin merender harga lewat JavaScript. Isi manual ya."
+      );
+    }
+    if (image && !imageFromJsonLd) {
+      warnings.push(
+        "Foto yang terdeteksi diambil dari thumbnail umum halaman (og:image), bukan dari data produk — bisa jadi itu banner iklan, bukan foto produk asli. Cek dulu sebelum simpan."
+      );
+    }
 
     return NextResponse.json({
       success: foundAny,
       name: title,
       image,
       price,
-      warning: !price
-        ? "Harga tidak terdeteksi otomatis — situs ini mungkin merender harga lewat JavaScript. Isi manual ya."
-        : undefined,
+      warning: warnings.length ? warnings.join(" ") : undefined,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Gagal memproses";
