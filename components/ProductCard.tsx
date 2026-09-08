@@ -6,6 +6,7 @@ import { Star, MapPin } from "lucide-react";
 
 interface ProductCardProps {
   product: Product;
+  onClick?: () => void;
 }
 
 const badgeConfig = {
@@ -14,16 +15,14 @@ const badgeConfig = {
   new: { label: "BARU", bg: "#26AA99" },
 };
 
-export default function ProductCard({ product }: ProductCardProps) {
+export default function ProductCard({ product, onClick }: ProductCardProps) {
   const discount = product.originalPrice
     ? getDiscount(product.price, product.originalPrice)
     : 0;
 
   return (
-    <a
-      href={product.url}
-      target="_blank"
-      rel="noopener noreferrer"
+    <div
+      onClick={onClick}
       className="product-card"
       style={{
         display: "block",
@@ -35,6 +34,7 @@ export default function ProductCard({ product }: ProductCardProps) {
         position: "relative",
         boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
         transition: "transform 0.15s, box-shadow 0.15s",
+        cursor: "pointer",
       }}
     >
       {/* Image */}
@@ -90,7 +90,6 @@ export default function ProductCard({ product }: ProductCardProps) {
 
       {/* Content */}
       <div style={{ padding: "8px" }}>
-        {/* Product Name */}
         <p
           className="line-clamp-2"
           style={{
@@ -104,15 +103,8 @@ export default function ProductCard({ product }: ProductCardProps) {
           {product.name}
         </p>
 
-        {/* Price */}
         <div style={{ marginBottom: "4px" }}>
-          <span
-            style={{
-              color: "#EE4D2D",
-              fontWeight: 700,
-              fontSize: "15px",
-            }}
-          >
+          <span style={{ color: "#EE4D2D", fontWeight: 700, fontSize: "15px" }}>
             {formatPrice(product.price)}
           </span>
           {product.originalPrice && (
@@ -129,35 +121,25 @@ export default function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
 
-        {/* Rating & Sold */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            marginBottom: "4px",
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "4px" }}>
           <Star size={11} fill="#FF9F00" color="#FF9F00" />
           <span style={{ fontSize: "11px", color: "#555" }}>{product.rating}</span>
           <span style={{ fontSize: "11px", color: "#bbb" }}>|</span>
           <span style={{ fontSize: "11px", color: "#555" }}>Terjual {formatSold(product.sold)}</span>
         </div>
 
-        {/* Location */}
         <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
           <MapPin size={10} color="#999" />
           <span style={{ fontSize: "11px", color: "#999" }}>{product.location}</span>
         </div>
       </div>
 
-      {/* Buy button (shown on hover via CSS) */}
       <style>{`
         .product-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(0,0,0,0.12);
         }
       `}</style>
-    </a>
+    </div>
   );
 }
