@@ -147,7 +147,7 @@ export default function Header({ onSearch, searchQuery }: HeaderProps) {
           msOverflowStyle: "none",
         }}
       >
-        {["Flash Sale ⚡", "Gratis Ongkir", "Pilihan Terbaik", "Promo Hari Ini", "Koleksi Baru"].map(
+        {["Gratis Ongkir", "Pilihan Terbaik", "Promo Hari Ini", "Koleksi Baru"].map(
           (label) => (
             <button
               key={label}

@@ -5,7 +5,6 @@ import ProductCard from "@/components/ProductCard";
 import ProductDetail from "@/components/ProductDetail";
 import CategoryFilter from "@/components/CategoryFilter";
 import Header from "@/components/Header";
-import FlashSaleBanner from "@/components/FlashSaleBanner";
 import SortBar from "@/components/SortBar";
 import { products as allProducts, Product } from "@/data/products";
 
@@ -61,9 +60,6 @@ export default function HomePage() {
         onSearch={setSearchQuery}
         searchQuery={searchQuery}
       />
-
-      {/* Flash Sale Banner */}
-      <FlashSaleBanner />
 
       {/* Category Filter tabs */}
       <CategoryFilter active={activeCategory} onChange={(cat) => {

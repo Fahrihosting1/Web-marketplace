@@ -184,8 +184,80 @@ function ProductForm({ data, onChange }: {
   onChange: (d: Omit<Product, "id"> & { id?: number }) => void;
 }) {
   const set = (field: string, value: unknown) => onChange({ ...data, [field]: value });
+
+  const [detecting, setDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const detectFromUrl = async () => {
+    if (!data.url.trim()) {
+      setDetectMsg({ type: "error", text: "Isi URL link produk dulu ya" });
+      return;
+    }
+    setDetecting(true);
+    setDetectMsg(null);
+    try {
+      const res = await fetch(`/api/scrape-product?url=${encodeURIComponent(data.url.trim())}`);
+      const json = await res.json();
+
+      if (!res.ok || json.error) {
+        setDetectMsg({ type: "error", text: json.error ?? "Gagal mendeteksi produk dari URL ini" });
+        return;
+      }
+
+      const updates: Partial<Omit<Product, "id">> = {};
+      if (json.name && !data.name.trim()) updates.name = json.name;
+      if (json.image) updates.image = json.image;
+      if (json.price) updates.price = json.price;
+      onChange({ ...data, ...updates });
+
+      if (json.warning) {
+        setDetectMsg({ type: "info", text: json.warning });
+      } else {
+        setDetectMsg({ type: "success", text: "Nama, foto & harga berhasil dideteksi ✓" });
+      }
+    } catch {
+      setDetectMsg({ type: "error", text: "Gagal menghubungi server, coba lagi" });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const msgColor = { success: "#26AA99", error: "#D0011B", info: "#2563EB" };
+
   return (
     <div>
+      <Field label="URL Link Produk" required hint="Tempel link Shopee/Tokopedia/dll, lalu klik Deteksi Otomatis">
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...inputStyle, flex: 1 }} value={data.url}
+            onChange={e => set("url", e.target.value)}
+            placeholder="https://shopee.co.id/..." />
+          <button
+            type="button"
+            onClick={detectFromUrl}
+            disabled={detecting}
+            style={{
+              flexShrink: 0,
+              padding: "0 16px",
+              borderRadius: 8,
+              border: "none",
+              background: detecting ? "#F0A98A" : "linear-gradient(135deg,#EE4D2D,#FF6633)",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: detecting ? "default" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {detecting ? "Mendeteksi..." : "🔍 Deteksi Otomatis"}
+          </button>
+        </div>
+        {detectMsg && (
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: msgColor[detectMsg.type], fontWeight: 600 }}>
+            {detectMsg.text}
+          </p>
+        )}
+      </Field>
+
       <Field label="Nama Produk" required>
         <input style={inputStyle} value={data.name}
           onChange={e => set("name", e.target.value)}
@@ -205,7 +277,7 @@ function ProductForm({ data, onChange }: {
         </Field>
       </div>
 
-      <Field label="URL Foto Produk" required hint="Link langsung ke gambar (jpg/png/webp)">
+      <Field label="URL Foto Produk" required hint="Terisi otomatis setelah deteksi, atau isi manual">
         <input style={inputStyle} value={data.image}
           onChange={e => set("image", e.target.value)}
           placeholder="https://..." />
@@ -216,12 +288,6 @@ function ProductForm({ data, onChange }: {
               onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
           </div>
         )}
-      </Field>
-
-      <Field label="URL Link Produk" required hint="Link Shopee/Tokopedia/dll">
-        <input style={inputStyle} value={data.url}
-          onChange={e => set("url", e.target.value)}
-          placeholder="https://shopee.co.id/..." />
       </Field>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
